@@ -23,7 +23,6 @@
             padding: 10px;
         }
 
-        /* 游戏信息区域 */
         .game-info {
             color: #ffffff;
             margin-bottom: 15px;
@@ -42,7 +41,6 @@
             margin-bottom: 8px;
         }
 
-        /* 双得分显示（玩家 + AI） */
         .score-group {
             display: flex;
             justify-content: center;
@@ -59,7 +57,6 @@
             color: #03a9f4;
         }
 
-        /* 按钮组（难度 + AI单人 + 人机对战） */
         .btn-group {
             display: flex;
             gap: 8px;
@@ -85,14 +82,6 @@
             font-weight: bold;
         }
 
-        .mode-btn.disabled {
-            border-color: #666666;
-            color: #666666;
-            cursor: not-allowed;
-            background-color: transparent;
-        }
-
-        /* 游戏画布容器 */
         .game-container {
             position: relative;
             width: 100%;
@@ -109,7 +98,6 @@
             background-color: #2c2c2c;
         }
 
-        /* 游戏提示（结束 + 对战胜负） */
         .game-tip {
             position: absolute;
             top: 50%;
@@ -131,7 +119,6 @@
             color: #4cd964;
         }
 
-        /* 控制按钮 */
         .control-panel {
             margin-top: 20px;
             width: 100%;
@@ -168,7 +155,6 @@
         #down { grid-area: down; }
         #right { grid-area: right; }
 
-        /* 响应式调整 */
         @media (max-width: 375px) {
             .control-btn {
                 width: 70px;
@@ -202,16 +188,15 @@
         <p class="game-creator">本游戏由多多制作</p>
         <div class="score-group">
             <p class="player-score">玩家得分: <span id="playerScore">0</span></p>
-            <p class="ai-score">AI得分: <span id="aiScore">0</span></p>
+            <p class="ai-score" id="aiScoreDisplay" style="display: none;">AI得分: <span id="aiScore">0</span></p>
         </div>
         <div class="btn-group">
-            <!-- 难度按钮 -->
-            <button class="diff-btn" id="easy">简单(+1)</button>
-            <button class="diff-btn active" id="medium">中等(+2)</button>
+            <button class="diff-btn active" id="easy">简单(+1)</button>
+            <button class="diff-btn" id="medium">中等(+2)</button>
             <button class="diff-btn" id="hard">困难(+5)</button>
-            <!-- 模式按钮 -->
-            <button class="mode-btn" id="singleMode">单人模式</button>
+            <button class="mode-btn active" id="singleMode">单人模式</button>
             <button class="mode-btn" id="vsMode">人机对战</button>
+            <button class="mode-btn" id="aiToggle" style="display: none;">AI单人: 关闭</button>
         </div>
     </div>
 
@@ -236,117 +221,80 @@
     </div>
 
     <script>
-        // 难度配置：速度 + 普通食物得分
+        // 难度配置
         const difficultyConfig = {
             easy: { speed: 180, score: 1 },
             medium: { speed: 120, score: 2 },
             hard: { speed: 70, score: 5 }
         };
 
-        // 特殊食物配置 (共4种，总生成概率40%)
+        // 特殊食物配置
         const specialFoodList = [
-            {
-                type: "double",
-                color: "#9c27b0", // 紫色
-                probability: 0.1,
-                effect: (baseScore) => baseScore * 2,
-                desc: "双倍分"
-            },
-            {
-                type: "triple",
-                color: "#ff9800", // 橙色
-                probability: 0.08,
-                effect: (baseScore) => baseScore * 3,
-                desc: "三倍分"
-            },
-            {
-                type: "speedUp",
-                color: "#e91e63", // 粉色
-                probability: 0.12,
-                effect: (baseScore, snakeOwner) => {
-                    snakeOwner.tempSpeed = snakeOwner.baseSpeed * 0.7;
-                    setTimeout(() => snakeOwner.tempSpeed = null, 5000);
-                    return baseScore;
-                },
-                desc: "提速5秒"
-            },
-            {
-                type: "slim",
-                color: "#03a9f4", // 蓝色
-                probability: 0.1,
-                effect: (baseScore, snakeOwner) => {
-                    while (snakeOwner.snake.length > 3) {
-                        snakeOwner.snake.pop();
-                    }
-                    return baseScore * 1.5;
-                },
-                desc: "瘦身加分"
-            }
+            { type: "double", color: "#9c27b0", probability: 0.1, effect: s => s*2 },
+            { type: "triple", color: "#ff9800", probability: 0.08, effect: s => s*3 },
+            { type: "speedUp", color: "#e91e63", probability: 0.12, effect: (s, o) => { o.tempSpeed = o.baseSpeed*0.7; setTimeout(()=>o.tempSpeed=null,5000); return s; } },
+            { type: "slim", color: "#03a9f4", probability: 0.1, effect: (s, o) => { while(o.snake.length>3) o.snake.pop(); return s*1.5; } }
         ];
 
-        // 全局模式变量
-        let currentDifficulty = "medium";
-        let currentMode = "single"; // single:单人模式, vs:人机对战
-        let isSingleAIEnabled = false; // 单人AI模式开关
+        // 全局变量
+        let currentDifficulty = "easy"; // 改为简单难度启动更稳定
+        let currentMode = "single";
+        let isSingleAIEnabled = false;
 
-        // 游戏对象：玩家蛇 + AI蛇（对战模式共用）
+        // 游戏核心对象（初始化赋默认值，避免undefined）
         const game = {
-            // 画布配置
             canvas: null,
             ctx: null,
             gridSize: 20,
             borderColor: "#2c2c2c",
             normalFoodColor: "#ff3b30",
-            // 食物信息
-            food: {},
+            food: { x: 0, y: 0 },
             foodType: "normal",
-            // 玩家蛇配置
             player: {
                 snake: [],
                 direction: "right",
                 nextDirection: "right",
                 color: "#4cd964",
                 score: 0,
-                baseSpeed: difficultyConfig[currentDifficulty].speed,
+                baseSpeed: 180,
                 tempSpeed: null,
                 isDead: false
             },
-            // AI蛇配置
             ai: {
                 snake: [],
                 direction: "left",
                 nextDirection: "left",
                 color: "#03a9f4",
                 score: 0,
-                baseSpeed: difficultyConfig[currentDifficulty].speed,
+                baseSpeed: 180,
                 tempSpeed: null,
                 isDead: false
             },
-            // 游戏循环
             gameLoop: null,
             isGameOver: false
         };
 
-        // 页面加载初始化
-        window.onload = function() {
+        // 页面加载完成后立即初始化（确保DOM已渲染）
+        window.addEventListener("load", function() {
             game.canvas = document.getElementById("gameCanvas");
             game.ctx = game.canvas.getContext("2d");
-            initCanvas();
+            // 强制设置画布尺寸（避免容器未渲染导致尺寸为0）
+            game.canvas.width = game.canvas.parentElement.clientWidth;
+            game.canvas.height = game.canvas.parentElement.clientHeight;
+            game.gridSize = Math.max(15, Math.floor(Math.min(game.canvas.width, game.canvas.height)/20));
+            
             bindAllButtons();
             initGame();
-        };
+            // 监听窗口大小变化
+            window.addEventListener("resize", resizeCanvas);
+        });
 
-        // 画布适配
-        function initCanvas() {
-            function resize() {
-                const container = game.canvas.parentElement;
-                game.canvas.width = container.clientWidth;
-                game.canvas.height = container.clientHeight;
-                game.gridSize = Math.floor(Math.min(game.canvas.width, game.canvas.height) / 20);
-                if (game.gridSize < 15) game.gridSize = 15;
-            }
-            resize();
-            window.addEventListener("resize", resize);
+        // 画布尺寸自适应
+        function resizeCanvas() {
+            game.canvas.width = game.canvas.parentElement.clientWidth;
+            game.canvas.height = game.canvas.parentElement.clientHeight;
+            game.gridSize = Math.max(15, Math.floor(Math.min(game.canvas.width, game.canvas.height)/20));
+            if(!game.isGameOver) renderGame();
         }
 
         // 绑定所有按钮事件
@@ -357,105 +305,78 @@
                     document.querySelectorAll(".diff-btn").forEach(b => b.classList.remove("active"));
                     btn.classList.add("active");
                     currentDifficulty = btn.id;
-                    // 更新两条蛇的基础速度
                     game.player.baseSpeed = difficultyConfig[currentDifficulty].speed;
                     game.ai.baseSpeed = difficultyConfig[currentDifficulty].speed;
                     initGame();
                 });
             });
 
-            // 模式切换按钮（单人 / 人机对战）
+            // 单人模式
             document.getElementById("singleMode").addEventListener("click", () => {
-                if (currentMode === "single") return;
                 currentMode = "single";
                 document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
                 document.getElementById("singleMode").classList.add("active");
-                // 重置单人AI按钮状态
-                const aiBtn = document.getElementById("aiToggle");
-                if (!aiBtn) {
-                    // 新增单人AI按钮（首次切换单人模式）
-                    const btnGroup = document.querySelector(".btn-group");
-                    const aiToggleBtn = document.createElement("button");
-                    aiToggleBtn.id = "aiToggle";
-                    aiToggleBtn.className = "mode-btn";
-                    aiToggleBtn.textContent = "AI单人: 关闭";
-                    btnGroup.appendChild(aiToggleBtn);
-                    // 绑定单人AI开关事件
-                    aiToggleBtn.addEventListener("click", () => {
-                        if (currentMode !== "single") return;
-                        isSingleAIEnabled = !isSingleAIEnabled;
-                        aiToggleBtn.textContent = isSingleAIEnabled ? "AI单人: 开启" : "AI单人: 关闭";
-                        aiToggleBtn.classList.toggle("active");
-                    });
-                }
-                initGame();
-            });
-
-            document.getElementById("vsMode").addEventListener("click", () => {
-                if (currentMode === "vs") return;
-                currentMode = "vs";
-                document.querySelectorAll(".mode-btn").forEach(b => {
-                    b.classList.remove("active");
-                    b.classList.remove("disabled");
-                });
-                document.getElementById("vsMode").classList.add("active");
-                // 移除单人AI按钮（对战模式下隐藏）
-                const aiBtn = document.getElementById("aiToggle");
-                if (aiBtn) aiBtn.remove();
+                document.getElementById("aiToggle").style.display = "inline-block";
+                document.getElementById("aiScoreDisplay").style.display = "none";
                 isSingleAIEnabled = false;
+                document.getElementById("aiToggle").textContent = "AI单人: 关闭";
+                document.getElementById("aiToggle").classList.remove("active");
                 initGame();
             });
 
-            // 方向控制按钮
-            document.getElementById("up").addEventListener("click", () => {
-                if (game.player.direction !== "down" && !game.player.isDead && !isSingleAIEnabled) {
-                    game.player.nextDirection = "up";
-                }
-            });
-            document.getElementById("down").addEventListener("click", () => {
-                if (game.player.direction !== "up" && !game.player.isDead && !isSingleAIEnabled) {
-                    game.player.nextDirection = "down";
-                }
-            });
-            document.getElementById("left").addEventListener("click", () => {
-                if (game.player.direction !== "right" && !game.player.isDead && !isSingleAIEnabled) {
-                    game.player.nextDirection = "left";
-                }
-            });
-            document.getElementById("right").addEventListener("click", () => {
-                if (game.player.direction !== "left" && !game.player.isDead && !isSingleAIEnabled) {
-                    game.player.nextDirection = "right";
-                }
+            // 对战模式
+            document.getElementById("vsMode").addEventListener("click", () => {
+                currentMode = "vs";
+                document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+                document.getElementById("vsMode").classList.add("active");
+                document.getElementById("aiToggle").style.display = "none";
+                document.getElementById("aiScoreDisplay").style.display = "inline-block";
+                initGame();
             });
 
-            // 游戏结束/对战结束重启
+            // AI单人开关
+            document.getElementById("aiToggle").addEventListener("click", () => {
+                if(currentMode !== "single") return;
+                isSingleAIEnabled = !isSingleAIEnabled;
+                const btn = document.getElementById("aiToggle");
+                btn.textContent = isSingleAIEnabled ? "AI单人: 开启" : "AI单人: 关闭";
+                btn.classList.toggle("active");
+            });
+
+            // 方向按钮
+            const dirBtns = {
+                up: () => game.player.nextDirection = "up",
+                down: () => game.player.nextDirection = "down",
+                left: () => game.player.nextDirection = "left",
+                right: () => game.player.nextDirection = "right"
+            };
+            Object.keys(dirBtns).forEach(key => {
+                document.getElementById(key).addEventListener("click", () => {
+                    if(game.player.isDead || isSingleAIEnabled) return;
+                    const oppo = {up:"down", down:"up", left:"right", right:"left"};
+                    if(game.player.direction !== oppo[key]) dirBtns[key]();
+                });
+            });
+
+            // 重启游戏
             document.querySelector(".game-container").addEventListener("click", () => {
-                if (game.isGameOver) initGame();
+                if(game.isGameOver) initGame();
             });
 
-            // 键盘控制(桌面端)
-            document.addEventListener("keydown", (e) => {
-                if (game.isGameOver || isSingleAIEnabled || currentMode === "vs" && game.player.isDead) return;
-                switch (e.key) {
-                    case "ArrowUp":
-                        if (game.player.direction !== "down") game.player.nextDirection = "up";
-                        break;
-                    case "ArrowDown":
-                        if (game.player.direction !== "up") game.player.nextDirection = "down";
-                        break;
-                    case "ArrowLeft":
-                        if (game.player.direction !== "right") game.player.nextDirection = "left";
-                        break;
-                    case "ArrowRight":
-                        if (game.player.direction !== "left") game.player.nextDirection = "right";
-                        break;
+            // 键盘控制
+            document.addEventListener("keydown", e => {
+                if(game.isGameOver || isSingleAIEnabled) return;
+                const oppo = {ArrowUp:"down", ArrowDown:"up", ArrowLeft:"right", ArrowRight:"left"};
+                const dirMap = {ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right"};
+                if(dirMap[e.key] && game.player.direction !== oppo[e.key]) {
+                    game.player.nextDirection = dirMap[e.key];
                 }
             });
         }
 
-        // 初始化游戏（区分单人/对战模式）
+        // 初始化游戏（核心修复：确保蛇位置在画布内）
         function initGame() {
-            // 重置全局状态
+            // 重置所有状态
             game.isGameOver = false;
             game.player.isDead = false;
             game.ai.isDead = false;
@@ -467,239 +388,195 @@
             // 重置得分
             game.player.score = 0;
             game.ai.score = 0;
-            document.getElementById("playerScore").textContent = game.player.score;
-            document.getElementById("aiScore").textContent = game.ai.score;
+            document.getElementById("playerScore").textContent = 0;
+            document.getElementById("aiScore").textContent = 0;
 
-            // 初始化玩家蛇位置
-            const centerX = Math.floor(game.canvas.width / (2 * game.gridSize)) * game.gridSize;
-            const centerY = Math.floor(game.canvas.height / (3 * game.gridSize)) * game.gridSize;
+            // 计算安全的初始位置（确保蛇在画布内）
+            const maxX = game.canvas.width - game.gridSize*3;
+            const maxY = game.canvas.height - game.gridSize*3;
+            const startX = Math.max(game.gridSize*2, Math.floor(maxX/2));
+            const startY = Math.max(game.gridSize*2, Math.floor(maxY/2));
+
+            // 玩家蛇初始位置
             game.player.snake = [
-                { x: centerX, y: centerY },
-                { x: centerX - game.gridSize, y: centerY },
-                { x: centerX - 2 * game.gridSize, y: centerY }
+                {x: startX + game.gridSize*2, y: startY},
+                {x: startX + game.gridSize, y: startY},
+                {x: startX, y: startY}
             ];
             game.player.direction = "right";
             game.player.nextDirection = "right";
 
-            // 初始化AI蛇位置（对战模式：下方独立区域，避免初始碰撞）
-            const aiCenterY = Math.floor(game.canvas.height / (3 * game.gridSize) * 2) * game.gridSize;
+            // AI蛇初始位置（对战模式）
+            const aiStartY = Math.max(game.gridSize*2, Math.floor((game.canvas.height - game.gridSize*3)/2)*2);
             game.ai.snake = [
-                { x: centerX, y: aiCenterY },
-                { x: centerX + game.gridSize, y: aiCenterY },
-                { x: centerX + 2 * game.gridSize, y: aiCenterY }
+                {x: startX, y: aiStartY},
+                {x: startX + game.gridSize, y: aiStartY},
+                {x: startX + game.gridSize*2, y: aiStartY}
             ];
             game.ai.direction = "left";
             game.ai.nextDirection = "left";
 
-            // 生成初始食物
+            // 生成食物
             generateFood();
 
-            // 重启游戏循环
-            if (game.gameLoop) clearInterval(game.gameLoop);
-            const currentSpeed = game.player.baseSpeed;
-            game.gameLoop = setInterval(updateGame, currentSpeed);
+            // 启动游戏循环（先清旧循环，避免多线程冲突）
+            if(game.gameLoop) clearInterval(game.gameLoop);
+            game.gameLoop = setInterval(updateGame, game.player.baseSpeed);
         }
 
-        // 生成食物（不与任意蛇身重叠）
+        // 生成食物（确保不越界、不与蛇重叠）
         function generateFood() {
+            const maxX = Math.floor((game.canvas.width - game.gridSize)/game.gridSize);
+            const maxY = Math.floor((game.canvas.height - game.gridSize)/game.gridSize);
+            
+            // 随机食物类型
             const rand = Math.random();
             let cumulativeProb = 0;
             game.foodType = "normal";
-
-            // 判断是否生成特殊食物
-            for (const sf of specialFoodList) {
+            for(const sf of specialFoodList) {
                 cumulativeProb += sf.probability;
-                if (rand <= cumulativeProb) {
+                if(rand <= cumulativeProb) {
                     game.foodType = sf.type;
                     break;
                 }
             }
 
-            // 食物位置生成（避开玩家蛇 + AI蛇）
-            const maxX = Math.floor((game.canvas.width - game.gridSize) / game.gridSize);
-            const maxY = Math.floor((game.canvas.height - game.gridSize) / game.gridSize);
+            // 生成不重叠的食物位置
+            let foodX, foodY;
             do {
-                game.food.x = Math.floor(Math.random() * maxX) * game.gridSize;
-                game.food.y = Math.floor(Math.random() * maxY) * game.gridSize;
-            } while (
-                game.player.snake.some(seg => seg.x === game.food.x && seg.y === game.food.y) ||
-                game.ai.snake.some(seg => seg.x === game.food.x && seg.y === game.food.y)
+                foodX = Math.floor(Math.random()*maxX) * game.gridSize;
+                foodY = Math.floor(Math.random()*maxY) * game.gridSize;
+            } while(
+                game.player.snake.some(s => s.x === foodX && s.y === foodY) ||
+                (currentMode === "vs" && game.ai.snake.some(s => s.x === foodX && s.y === foodY))
             );
+            game.food.x = foodX;
+            game.food.y = foodY;
         }
 
-        // AI蛇寻路逻辑（对战模式：独立寻路，避开玩家蛇和自身）
-        function aiAutoMove(isVsMode = false) {
-            const aiHead = game.ai.snake[0];
+        // AI寻路逻辑
+        function aiAutoMove(isVsMode) {
+            const snake = isVsMode ? game.ai.snake : game.player.snake;
+            const dir = isVsMode ? game.ai.direction : game.player.direction;
             const targetX = game.food.x;
             const targetY = game.food.y;
             const grid = game.gridSize;
-            const dirs = ["up", "down", "left", "right"];
-            const oppositeDir = { up: "down", down: "up", left: "right", right: "left" };
+            const oppo = {up:"down", down:"up", left:"right", right:"left"};
+            const dirs = ["up","down","left","right"];
 
-            // 优先方向：朝着食物对齐
-            let preferredDirs = [];
-            if (aiHead.x < targetX) preferredDirs.push("right");
-            else if (aiHead.x > targetX) preferredDirs.push("left");
-            if (aiHead.y < targetY) preferredDirs.push("down");
-            else if (aiHead.y > targetY) preferredDirs.push("up");
+            // 优先方向
+            let preferred = [];
+            if(snake[0].x < targetX) preferred.push("right");
+            else if(snake[0].x > targetX) preferred.push("left");
+            if(snake[0].y < targetY) preferred.push("down");
+            else if(snake[0].y > targetY) preferred.push("up");
+            preferred = preferred.concat(dirs.filter(d => !preferred.includes(d)));
 
-            // 补充备选方向
-            preferredDirs = preferredDirs.concat(dirs.filter(d => !preferredDirs.includes(d)));
-
-            // 筛选安全方向（避开边界、自身、玩家蛇（对战模式））
-            for (const dir of preferredDirs) {
-                if (dir === oppositeDir[game.ai.direction]) continue;
-
-                let newX = aiHead.x, newY = aiHead.y;
-                switch (dir) {
-                    case "up": newY -= grid; break;
-                    case "down": newY += grid; break;
-                    case "left": newX -= grid; break;
-                    case "right": newX += grid; break;
+            // 选安全方向
+            for(const d of preferred) {
+                if(d === oppo[dir]) continue;
+                let x = snake[0].x, y = snake[0].y;
+                switch(d) {
+                    case "up": y -= grid; break;
+                    case "down": y += grid; break;
+                    case "left": x -= grid; break;
+                    case "right": x += grid; break;
                 }
-
                 // 边界检测
-                const isOutOfBound = newX < 0 || newX >= game.canvas.width || newY < 0 || newY >= game.canvas.height;
-                if (isOutOfBound) continue;
-
-                // 自身碰撞检测
-                const isHitSelf = game.ai.snake.some(seg => seg.x === newX && seg.y === newY);
-                if (isHitSelf) continue;
-
-                // 对战模式：玩家蛇碰撞检测
-                const isHitPlayer = isVsMode && game.player.snake.some(seg => seg.x === newX && seg.y === newY);
-                if (isHitPlayer) continue;
-
-                // 选择安全方向
-                game.ai.nextDirection = dir;
+                if(x <0 || x >= game.canvas.width || y <0 || y >= game.canvas.height) continue;
+                // 自身碰撞
+                if(snake.some(s => s.x ===x && s.y === y)) continue;
+                // 对战模式检测玩家蛇
+                if(isVsMode && game.player.snake.some(s => s.x ===x && s.y === y)) continue;
+                
+                if(isVsMode) game.ai.nextDirection = d;
+                else game.player.nextDirection = d;
                 return;
             }
 
-            // 无安全方向：随机选不反向的方向
-            const availableDirs = dirs.filter(d => d !== oppositeDir[game.ai.direction]);
-            game.ai.nextDirection = availableDirs[Math.floor(Math.random() * availableDirs.length)];
+            // 无安全方向随机选
+            const avail = dirs.filter(d => d !== oppo[dir]);
+            if(isVsMode) game.ai.nextDirection = avail[Math.floor(Math.random()*avail.length)];
+            else game.player.nextDirection = avail[Math.floor(Math.random()*avail.length)];
         }
 
-        // 更新游戏逻辑（单/对战模式统一处理）
-        function updateGame() {
-            if (game.isGameOver) return;
+        // 更新蛇状态
+        function updateSnake(owner) {
+            const s = game[owner];
+            s.direction = s.nextDirection;
+            const head = {...s.snake[0]};
 
-            // 1. 模式判断与AI控制
-            if (currentMode === "single") {
-                // 单人AI模式：控制玩家蛇
-                if (isSingleAIEnabled) {
-                    aiAutoMove(false);
-                    // 同步AI方向到玩家蛇
-                    game.player.nextDirection = game.ai.nextDirection;
+            // 移动蛇头
+            switch(s.direction) {
+                case "up": head.y -= game.gridSize; break;
+                case "down": head.y += game.gridSize; break;
+                case "left": head.x -= game.gridSize; break;
+                case "right": head.x += game.gridSize; break;
+            }
+            s.snake.unshift(head);
+
+            // 碰撞检测
+            const outBound = head.x <0 || head.x >= game.canvas.width || head.y <0 || head.y >= game.canvas.height;
+            const hitSelf = s.snake.slice(1).some(seg => seg.x === head.x && seg.y === head.y);
+            const hitOther = currentMode === "vs" && (owner === "player" ? game.ai.snake : game.player.snake).some(seg => seg.x === head.x && seg.y === head.y);
+            
+            if(outBound || hitSelf || hitOther) {
+                s.isDead = true;
+                return;
+            }
+
+            // 吃食物
+            if(head.x === game.food.x && head.y === game.food.y) {
+                const base = difficultyConfig[currentDifficulty].score;
+                let add = base;
+                if(game.foodType !== "normal") {
+                    const sf = specialFoodList.find(item => item.type === game.foodType);
+                    add = sf.effect(base, s);
                 }
-            } else if (currentMode === "vs") {
-                // 人机对战：AI蛇独立寻路
-                aiAutoMove(true);
-            }
-
-            // 2. 处理玩家蛇移动
-            if (!game.player.isDead) {
-                updateSnake("player");
-            }
-
-            // 3. 处理AI蛇移动（对战模式必走，单人模式仅作备用）
-            if (!game.ai.isDead && (currentMode === "vs" || isSingleAIEnabled)) {
-                updateSnake("ai");
-            }
-
-            // 4. 胜负判断（对战模式）
-            if (currentMode === "vs") {
-                if (game.player.isDead && game.ai.isDead) {
-                    // 同归于尽
-                    endVsGame("平局!");
-                } else if (game.player.isDead) {
-                    endVsGame("AI获胜!");
-                } else if (game.ai.isDead) {
-                    endVsGame("玩家获胜!");
-                }
+                s.score += add;
+                document.getElementById(owner === "player" ? "playerScore" : "aiScore").textContent = s.score;
+                generateFood();
             } else {
-                // 单人模式：玩家蛇死亡即游戏结束
-                if (game.player.isDead) {
+                s.snake.pop();
+            }
+
+            // 速度更新
+            const speed = s.tempSpeed || s.baseSpeed;
+            if(owner === "player" && game.gameLoop) {
+                clearInterval(game.gameLoop);
+                game.gameLoop = setInterval(updateGame, speed);
+            }
+        }
+
+        // 游戏主循环
+        function updateGame() {
+            if(game.isGameOver) return;
+
+            // AI控制
+            if(currentMode === "single" && isSingleAIEnabled) aiAutoMove(false);
+            else if(currentMode === "vs") aiAutoMove(true);
+
+            // 更新蛇
+            if(!game.player.isDead) updateSnake("player");
+            if(currentMode === "vs" && !game.ai.isDead) updateSnake("ai");
+
+            // 胜负判断
+            if(currentMode === "vs") {
+                if(game.player.isDead && game.ai.isDead) endVsGame("平局!");
+                else if(game.player.isDead) endVsGame("AI获胜!");
+                else if(game.ai.isDead) endVsGame("玩家获胜!");
+            } else {
+                if(game.player.isDead) {
                     game.isGameOver = true;
                     clearInterval(game.gameLoop);
                     document.getElementById("gameOver").style.display = "block";
                 }
             }
 
-            // 5. 绘制游戏画面
             renderGame();
         }
 
-        // 更新单条蛇的移动与碰撞检测
-        function updateSnake(ownerType) {
-            const snakeOwner = game[ownerType];
-            const grid = game.gridSize;
-
-            // 应用方向
-            snakeOwner.direction = snakeOwner.nextDirection;
-            const head = { ...snakeOwner.snake[0] };
-
-            // 计算新蛇头位置
-            switch (snakeOwner.direction) {
-                case "up": head.y -= grid; break;
-                case "down": head.y += grid; break;
-                case "left": head.x -= grid; break;
-                case "right": head.x += grid; break;
-            }
-
-            // 插入新蛇头
-            snakeOwner.snake.unshift(head);
-
-            // 碰撞检测
-            // 边界碰撞
-            const isOutOfBound = head.x < 0 || head.x >= game.canvas.width || head.y < 0 || head.y >= game.canvas.height;
-            // 自身碰撞
-            const isHitSelf = snakeOwner.snake.slice(1).some(seg => seg.x === head.x && seg.y === head.y);
-            // 对战模式：对方蛇碰撞
-            const isHitOpponent = currentMode === "vs" && 
-                ownerType === "player" ? game.ai.snake.some(seg => seg.x === head.x && seg.y === head.y) :
-                game.player.snake.some(seg => seg.x === head.x && seg.y === head.y);
-
-            if (isOutOfBound || isHitSelf || isHitOpponent) {
-                snakeOwner.isDead = true;
-                return;
-            }
-
-            // 吃到食物处理
-            if (head.x === game.food.x && head.y === game.food.y) {
-                const baseScore = difficultyConfig[currentDifficulty].score;
-                let addScore = baseScore;
-
-                // 执行特殊食物效果
-                if (game.foodType !== "normal") {
-                    const sf = specialFoodList.find(item => item.type === game.foodType);
-                    addScore = sf.effect(baseScore, snakeOwner);
-                }
-
-                // 更新得分
-                snakeOwner.score += addScore;
-                if (ownerType === "player") {
-                    document.getElementById("playerScore").textContent = snakeOwner.score;
-                } else {
-                    document.getElementById("aiScore").textContent = snakeOwner.score;
-                }
-
-                // 生成新食物
-                generateFood();
-            } else {
-                // 没吃到食物：缩短蛇尾
-                snakeOwner.snake.pop();
-            }
-
-            // 应用临时速度（提速效果）
-            const currentSpeed = snakeOwner.tempSpeed || snakeOwner.baseSpeed;
-            if (ownerType === "player") {
-                clearInterval(game.gameLoop);
-                game.gameLoop = setInterval(updateGame, currentSpeed);
-            }
-        }
-
-        // 结束人机对战并显示结果
+        // 结束对战
         function endVsGame(result) {
             game.isGameOver = true;
             clearInterval(game.gameLoop);
@@ -707,34 +584,34 @@
             document.getElementById("vsResult").style.display = "block";
         }
 
-        // 绘制游戏画面（双蛇 + 食物）
+        // 绘制游戏画面
         function renderGame() {
             // 清空画布
             game.ctx.fillStyle = game.borderColor;
-            game.ctx.fillRect(0, 0, game.canvas.width, game.canvas.height);
+            game.ctx.fillRect(0,0,game.canvas.width,game.canvas.height);
 
             // 绘制玩家蛇
             game.ctx.fillStyle = game.player.color;
             game.player.snake.forEach(seg => {
-                game.ctx.fillRect(seg.x, seg.y, game.gridSize - 1, game.gridSize - 1);
+                game.ctx.fillRect(seg.x, seg.y, game.gridSize-1, game.gridSize-1);
             });
 
-            // 绘制AI蛇（对战模式/单人AI模式显示）
-            if (currentMode === "vs" || isSingleAIEnabled) {
+            // 绘制AI蛇（对战模式）
+            if(currentMode === "vs") {
                 game.ctx.fillStyle = game.ai.color;
                 game.ai.snake.forEach(seg => {
-                    game.ctx.fillRect(seg.x, seg.y, game.gridSize - 1, game.gridSize - 1);
+                    game.ctx.fillRect(seg.x, seg.y, game.gridSize-1, game.gridSize-1);
                 });
             }
 
             // 绘制食物
             let foodColor = game.normalFoodColor;
-            if (game.foodType !== "normal") {
+            if(game.foodType !== "normal") {
                 const sf = specialFoodList.find(item => item.type === game.foodType);
                 foodColor = sf.color;
             }
             game.ctx.fillStyle = foodColor;
-            game.ctx.fillRect(game.food.x, game.food.y, game.gridSize - 1, game.gridSize - 1);
+            game.ctx.fillRect(game.food.x, game.food.y, game.gridSize-1, game.gridSize-1);
         }
     </script>
 </body>
