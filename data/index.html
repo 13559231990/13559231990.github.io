@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文件下载</title>
+    <title>自定义文件下载界面</title>
     <style>
         * {
             margin: 0;
@@ -34,14 +35,16 @@
             border-bottom: 1px solid #eee;
         }
 
-        /* 新增搜索框样式 */
+        /* 调整搜索框样式，适配按钮 */
         .search-box {
             margin-bottom: 20px;
-            position: relative;
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
 
         .search-input {
-            width: 100%;
+            flex: 1;
             padding: 10px 15px;
             border: 1px solid #eee;
             border-radius: 8px;
@@ -57,6 +60,23 @@
 
         .search-input::placeholder {
             color: #999;
+        }
+
+        /* 搜索按钮样式 */
+        .search-btn {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .search-btn:hover {
+            background-color: #0056b3;
         }
 
         .file-list {
@@ -140,24 +160,31 @@
             .file-list {
                 grid-template-columns: 1fr;
             }
+            .search-box {
+                flex-direction: column;
+            }
+            .search-input, .search-btn {
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h2 class="title">文件下载列表</h2>
-        <!-- 新增搜索框 -->
+        <!-- 调整搜索框结构，新增搜索按钮 -->
         <div class="search-box">
             <input type="text" class="search-input" id="searchInput" placeholder="输入文件名搜索...">
+            <button class="search-btn" id="searchBtn">搜索</button>
         </div>
         <div class="file-list" id="fileList"></div>
     </div>
 
     <script>
-        // 添加文件下载//
+        // 核心数据：仅保留指定的这一个文件
         const fileData = [
             {
-                iconUrl: "https://blog.duoduo666.de5.net/data/001/1.svg", // 图标图片地址
+                iconUrl: "https://blog.duoduo666.de5.net/data/icon/1.svg", // 图标图片地址
                 name: "一键关闭Windows更新", // 文件名
                 downloadUrl: "https://url77.ctfile.com/f/65842677-8677578005-8d56e9" // 下载地址
             }
@@ -166,6 +193,7 @@
         // 获取DOM元素
         const fileList = document.getElementById("fileList");
         const searchInput = document.getElementById("searchInput");
+        const searchBtn = document.getElementById("searchBtn");
 
         // 渲染文件列表（支持搜索过滤）
         function renderFileList(filterText = "") {
@@ -202,9 +230,18 @@
             });
         }
 
-        // 监听搜索框输入事件
-        searchInput.addEventListener("input", function() {
-            renderFileList(this.value); // 根据输入内容重新渲染
+        // 绑定搜索事件：点击按钮触发搜索
+        searchBtn.addEventListener("click", function() {
+            renderFileList(searchInput.value);
+        });
+
+        
+
+        // 支持按回车键触发搜索
+        searchInput.addEventListener("keydown", function(e) {
+            if (e.key === "Enter") {
+                renderFileList(this.value);
+            }
         });
 
         // 页面加载完成后初始化渲染
