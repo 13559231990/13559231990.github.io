@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>自定义文件下载界面</title>
+    <title>文件下载</title>
     <style>
         * {
             margin: 0;
@@ -35,7 +34,6 @@
             border-bottom: 1px solid #eee;
         }
 
-        /* 调整搜索框样式，适配按钮 */
         .search-box {
             margin-bottom: 20px;
             display: flex;
@@ -62,7 +60,6 @@
             color: #999;
         }
 
-        /* 搜索按钮样式 */
         .search-btn {
             padding: 10px 20px;
             background-color: #007bff;
@@ -92,6 +89,7 @@
             border: 1px solid #eee;
             border-radius: 8px;
             transition: all 0.3s ease;
+            cursor: pointer;
         }
 
         .file-item:hover {
@@ -147,7 +145,6 @@
             background-color: #0056b3;
         }
 
-        /* 无结果提示样式 */
         .no-result {
             text-align: center;
             padding: 40px 0;
@@ -155,7 +152,56 @@
             font-size: 16px;
         }
 
-        /* 响应式适配 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            padding: 25px;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 20px;
+            color: #999;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-desc {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+
         @media (max-width: 768px) {
             .file-list {
                 grid-template-columns: 1fr;
@@ -172,7 +218,6 @@
 <body>
     <div class="container">
         <h2 class="title">文件下载列表</h2>
-        <!-- 调整搜索框结构，新增搜索按钮 -->
         <div class="search-box">
             <input type="text" class="search-input" id="searchInput" placeholder="输入文件名搜索...">
             <button class="search-btn" id="searchBtn">搜索</button>
@@ -180,40 +225,53 @@
         <div class="file-list" id="fileList"></div>
     </div>
 
+    <div class="modal" id="fileModal">
+        <div class="modal-content">
+            <span class="modal-close" id="modalClose">&times;</span>
+            <h3 class="modal-title" id="modalTitle"></h3>
+            <div class="modal-desc" id="modalDesc"></div>
+        </div>
+    </div>
+
     <script>
-        // 核心数据：仅保留指定的这一个文件
+        // 添加/修改下载数据请在此处操作（新增modalTitle字段为弹窗标题，intro为文件介绍）
         const fileData = [
             {
-                iconUrl: "https://blog.duoduo666.de5.net/data/icon/1.svg", // 图标图片地址
-                name: "一键关闭Windows更新", // 文件名
-                downloadUrl: "https://url77.ctfile.com/f/65842677-8677578005-8d56e9" // 下载地址
+                iconUrl: "https://blog.duoduo666.de5.net/data/001/1.svg",
+                name: "一键关闭Windows更新.zip",
+                downloadUrl: "https://raw.githubusercontent.com/13559231990/data/refs/heads/main/%E4%B8%80%E9%94%AE%E5%85%B3%E9%97%ADWindows%E6%9B%B4%E6%96%B0.zip",
+                modalTitle: "Windows更新关闭工具", 
+                intro: "Windows Update Blocker（简称WUB）是一款由Sordum.org开发的免费、绿色便携工具，可一键开启或关闭Windows自动更新服务，支持 Windows 7 至 Windows 11。其核心优势在于轻量、易用、可定制，能让用户灵活掌控更新节奏，避免自动重启与兼容性问题。"
             }
         ];
 
-        // 获取DOM元素
         const fileList = document.getElementById("fileList");
         const searchInput = document.getElementById("searchInput");
         const searchBtn = document.getElementById("searchBtn");
+        const fileModal = document.getElementById("fileModal");
+        const modalTitle = document.getElementById("modalTitle");
+        const modalDesc = document.getElementById("modalDesc");
+        const modalClose = document.getElementById("modalClose");
 
-        // 渲染文件列表（支持搜索过滤）
         function renderFileList(filterText = "") {
-            fileList.innerHTML = ""; // 清空原有内容
+            fileList.innerHTML = "";
             
-            // 过滤数据：按文件名模糊匹配
             const filteredData = fileData.filter(file => 
                 file.name.toLowerCase().includes(filterText.toLowerCase())
             );
 
-            // 如果没有匹配结果，显示提示
             if (filteredData.length === 0) {
                 fileList.innerHTML = '<div class="no-result">未找到匹配的文件</div>';
                 return;
             }
 
-            // 渲染过滤后的文件列表
             filteredData.forEach(file => {
                 const fileItem = document.createElement("div");
                 fileItem.className = "file-item";
+                // 存储自定义标题和介绍
+                fileItem.setAttribute("data-modal-title", file.modalTitle);
+                fileItem.setAttribute("data-intro", file.intro);
+                fileItem.setAttribute("data-name", file.name);
                 fileItem.innerHTML = `
                     <div class="file-icon">
                         <img src="${file.iconUrl}" alt="${file.name}图标">
@@ -226,25 +284,42 @@
                         </a>
                     </div>
                 `;
+                fileItem.addEventListener("click", function(e) {
+                    if (!e.target.classList.contains('download-btn')) {
+                        // 使用自定义弹窗标题
+                        modalTitle.textContent = this.getAttribute("data-modal-title");
+                        modalDesc.textContent = this.getAttribute("data-intro");
+                        fileModal.style.display = "flex";
+                    }
+                });
                 fileList.appendChild(fileItem);
             });
         }
 
-        // 绑定搜索事件：点击按钮触发搜索
+        modalClose.addEventListener("click", function() {
+            fileModal.style.display = "none";
+        });
+
+        window.addEventListener("click", function(e) {
+            if (e.target === fileModal) {
+                fileModal.style.display = "none";
+            }
+        });
+
         searchBtn.addEventListener("click", function() {
             renderFileList(searchInput.value);
         });
 
-        
+        searchInput.addEventListener("input", function() {
+            renderFileList(this.value);
+        });
 
-        // 支持按回车键触发搜索
         searchInput.addEventListener("keydown", function(e) {
             if (e.key === "Enter") {
                 renderFileList(this.value);
             }
         });
 
-        // 页面加载完成后初始化渲染
         window.onload = () => renderFileList();
     </script>
 </body>
